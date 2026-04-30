@@ -1,4 +1,5 @@
 const Offer = require('../models/Offer');
+const Order = require('../models/Order');
 const AppError = require('../utils/AppError');
 const sendResponse = require('../utils/sendResponse');
 
@@ -25,7 +26,7 @@ const updateOffer = async (req, res, next) => {
 
 const deleteOffer = async (req, res, next) => {
   const offer = await Offer.findById(req.params.id);
-  if (!offer) return next(new AppError('Offer not found', 404));
+  if (!offer) return next(new AppError('Offer not found', 404)); 
   await offer.deleteOne();
   sendResponse(res, 200, 'Offer deleted');
 };
@@ -34,7 +35,12 @@ const validateCoupon = async (req, res, next) => {
   const { code, amount } = req.body;
   const offer = await Offer.findOne({ couponCode: code.toUpperCase(), isActive: true });
 
-  if (!offer || offer.expiryDate < new Date()) return next(new AppError('Invalid or expired coupon', 400));
+  if (!offer || !offer.isActive || offer.expiryDate < new Date()) return next(new AppError('Invalid or expired coupon', 400));
+  if (offer.usageLimit !== null && offer.usedCount >= offer.usageLimit) return next(new AppError('Coupon usage limit reached', 400));
+  if (offer.userUsageLimit !== null) {
+    const userCouponCount = await Order.countDocuments({ user: req.user.id, coupon: offer._id });
+    if (userCouponCount >= offer.userUsageLimit) return next(new AppError('Coupon already used by you', 400));
+  }
   if (amount < offer.minOrderAmount) return next(new AppError(`Minimum order ₹${offer.minOrderAmount} required`, 400));
 
   let discount = 0;

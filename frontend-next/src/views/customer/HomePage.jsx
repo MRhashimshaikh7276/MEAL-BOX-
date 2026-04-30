@@ -29,7 +29,6 @@ export default function HomePage() {
   const { list: combos, loading: comboLoading } = useSelector(s => s.combos)
   const { list: banners, loading: bannerLoading } = useSelector(s => s.banners)
 
-  const [activeBanner, setActiveBanner] = useState(0)
   const [activeIndex, setActiveIndex] = useState(0)
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState('all')
@@ -101,16 +100,6 @@ export default function HomePage() {
     dispatch(fetchBanners())
   }, [dispatch])
 
-  // Banner carousel
-  useEffect(() => {
-    if (banners.length > 0) {
-      const interval = setInterval(() => {
-        setActiveBanner(p => (p + 1) % banners.length)
-      }, 4000)
-      return () => clearInterval(interval)
-    }
-  }, [banners])
-
   const activeBanners = useMemo(() => {
     const now = new Date()
     return banners.filter(b =>
@@ -119,6 +108,26 @@ export default function HomePage() {
       (!b.enddatetTime || new Date(b.enddatetTime) >= now)
     )
   }, [banners])
+
+  const activeBannerItem = activeBanners[activeIndex]
+
+  // Reset index whenever the active banner list changes
+  useEffect(() => {
+    if (activeBanners.length > 0) {
+      setActiveIndex(0)
+    }
+  }, [activeBanners])
+
+  // Auto-advance only when the current banner is not a video
+  useEffect(() => {
+    if (!activeBannerItem || activeBannerItem.type === 'video') return
+
+    const interval = setInterval(() => {
+      setActiveIndex(p => (p + 1) % activeBanners.length)
+    }, 4000)
+
+    return () => clearInterval(interval)
+  }, [activeBannerItem, activeBanners.length])
 
   const handleSearchResultClick = (type, item) => {
     setShowSearchDropdown(false)
@@ -161,14 +170,25 @@ export default function HomePage() {
       <div className="relative w-full mt-6">
         <div className="relative overflow-hidden mx-4 rounded-2xl">
           <AnimatePresence mode="wait">
-            {activeBanners[activeIndex] && (
-              <img
-                key={activeBanners[activeIndex]?._id}
-                src={`${baseUrl}${activeBanners[activeIndex]?.bannerImage}`}
-                alt="Banner"
-                className="w-full h-[200px] md:h-[430px] object-cover"
+            {activeBannerItem && activeBannerItem.type === 'video' ? (
+              <video
+                key={activeBannerItem._id}
+                src={`${baseUrl}${activeBannerItem.bannerImage}`}
+                poster={activeBannerItem.thumbnail ? `${baseUrl}${activeBannerItem.thumbnail}` : undefined}
+                className="w-full h-[280px] sm:h-[320px] md:h-[430px] object-cover"
+                autoPlay
+                muted
+                playsInline
+                onEnded={() => setActiveIndex(p => (p + 1) % activeBanners.length)}
               />
-            )}
+            ) : activeBannerItem ? (
+              <img
+                key={activeBannerItem._id}
+                src={`${baseUrl}${activeBannerItem.bannerImage || activeBannerItem.thumbnail}`}
+                alt="Banner"
+                className="w-full h-[280px] sm:h-[320px] md:h-[430px] object-cover"
+              />
+            ) : null}
           </AnimatePresence>
 
           {/* Banner Dots */}
@@ -282,7 +302,7 @@ export default function HomePage() {
                     setActiveCategory(cat._id)
                     router.push(`/menu?categoryId=${cat._id}`)
                   }}
-                  
+
                   className="flex flex-col items-center gap-2 shrink-0 transition-transform active:scale-90"
                 >
                   <div className={`w-16 h-16 rounded-2xl overflow-hidden transition-all ${activeCategory === cat._id ? 'ring-2 ring-primary-500 shadow-lg shadow-primary-500/20' : 'border border-gray-100 dark:border-gray-800'}`}>
@@ -360,7 +380,7 @@ export default function HomePage() {
                       </p>
                     </button>
                   ))}
-                </div>  
+                </div>
               </motion.div>
             </motion.div>
           )}
@@ -399,22 +419,22 @@ export default function HomePage() {
               </div>
             </section>
           ))
-        ) : (
-          <section>
-            <div className="bg-gradient-to-r from-primary-500 to-orange-400 rounded-3xl p-5 flex items-center justify-between overflow-hidden relative">
-              <div className="relative z-10">
-                <p className="text-white/80 text-sm font-medium">Limited Time Offer</p>
-                <h3 className="text-white font-display font-bold text-2xl">Use code MEAL50</h3>
-                <p className="text-white/90 text-sm mt-1">Get 50% off on your first order</p>
-                <Link href="/menu" className="mt-3 inline-flex items-center gap-1 bg-white text-primary-600 font-bold text-sm px-4 py-2 rounded-xl hover:shadow-md transition-all">
-                  Order Now <ChevronRight size={14} />
-                </Link>
-              </div>
-              <div className="text-7xl opacity-30 absolute -right-4 -bottom-2 select-none">🎉</div>
-              <div className="text-5xl hidden sm:block select-none relative z-10">🎁</div>
-            </div>
-          </section>
-        )}
+        ) : 
+          // <section>
+          //   <div className="bg-gradient-to-r from-primary-500 to-orange-400 rounded-3xl p-5 flex items-center justify-between overflow-hidden relative">
+          //     <div className="relative z-10">
+          //       <p className="text-white/80 text-sm font-medium">Limited Time Offer</p>
+          //       <h3 className="text-white font-display font-bold text-2xl">Use code MEAL50</h3>
+          //       <p className="text-white/90 text-sm mt-1">Get 50% off on your first order</p>
+          //       <Link href="/menu" className="mt-3 inline-flex items-center gap-1 bg-white text-primary-600 font-bold text-sm px-4 py-2 rounded-xl hover:shadow-md transition-all">
+          //         Order Now <ChevronRight size={14} />
+          //       </Link>
+          //     </div>
+          //     <div className="text-7xl opacity-30 absolute -right-4 -bottom-2 select-none">🎉</div>
+          //     <div className="text-5xl hidden sm:block select-none relative z-10">🎁</div>
+          //   </div>
+          // </section>
+         null}
 
         {/* Products Section */}
         <section>

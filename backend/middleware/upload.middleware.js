@@ -12,7 +12,7 @@ const BASE_UPLOAD_PATH = path.join(__dirname, '../uploads');
 // ==============================
 // FUNCTION TO CREATE MULTER INSTANCE
 // ==============================
-const createUploader = (folderName) => {
+const createUploader = (folderName, maxFileSize = 30 * 1024 * 1024) => {
 
     const uploadPath = path.join(BASE_UPLOAD_PATH, folderName);
 
@@ -40,7 +40,7 @@ const createUploader = (folderName) => {
     return multer({
         storage,
         limits: {
-            fileSize: 5 * 1024 * 1024 // 5MB
+            fileSize: maxFileSize
         }
     });
 

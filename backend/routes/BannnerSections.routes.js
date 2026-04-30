@@ -8,7 +8,7 @@ const { protect, authorize } = require('../middleware/auth.middleware');
 
 const createUploader = require('../middleware/upload.middleware');
 
-const upload = createUploader('BannerSection');
+const upload = createUploader('BannerSection', 50 * 1024 * 1024); // allow up to 50MB for banner videos
 
 // Public routes
 router.get('/', bannerSectionController.getAllBannerSections);

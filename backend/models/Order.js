@@ -91,7 +91,7 @@ const orderSchema = new mongoose.Schema({
     default: 15,
   },
   preparingStartedAt: Date,
-  preparingCompletedAt: Date,
+  preparingCompletedAt: Date,  
   outForDeliveryAt: Date,
   deliveredAt: Date,
   deliveryBoyEstimatedTime: {

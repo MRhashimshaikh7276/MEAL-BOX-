@@ -3,6 +3,7 @@ const Cart = require('../models/Cart');
 const Product = require('../models/Product');
 const Combo = require('../models/Combo');
 const AddOnes = require('../models/addOnes');
+const Order = require('../models/Order');
 const AppError = require('../utils/AppError');
 const sendResponse = require('../utils/sendResponse');
 
@@ -210,8 +211,12 @@ const applyCoupon = async (req, res, next) => {
 
   const offer = await Offer.findOne({ couponCode: couponCode.toUpperCase(), isActive: true });
 
-  if (!offer) return next(new AppError('Invalid or expired coupon code', 400));
-  if (offer.expiryDate < new Date()) return next(new AppError('Coupon has expired', 400));
+  if (!offer || !offer.isActive || offer.expiryDate < new Date()) return next(new AppError('Invalid or expired coupon code', 400));
+  if (offer.usageLimit !== null && offer.usedCount >= offer.usageLimit) return next(new AppError('Coupon usage limit reached', 400));
+  if (offer.userUsageLimit !== null) {
+    const userCouponCount = await Order.countDocuments({ user: req.user.id, coupon: offer._id });
+    if (userCouponCount >= offer.userUsageLimit) return next(new AppError('Coupon already used by you', 400));
+  }
 
   const cart = await Cart.findOne({ user: req.user.id });
   if (!cart) return next(new AppError('Cart is empty', 400));

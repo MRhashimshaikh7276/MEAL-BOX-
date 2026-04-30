@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 const baseUrl = process.env.NEXT_PUBLIC_SERVER_URL
 
 export default function AdminBannerSection() {
-  const router = useRouter()
+  const router = useRouter() 
   const [bannerSections, setBannerSections] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -157,11 +157,22 @@ export default function AdminBannerSection() {
           <div key={banner._id} className="card p-4 group hover:shadow-md transition-all">
             <div className="relative mb-3 rounded-xl overflow-hidden h-32 bg-gray-100">
               {getBannerImage(banner) ? (
-                <img
-                  src={getBannerImage(banner)}
-                  alt="Banner"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
+                banner.type === 'video' ? (
+                  <video
+                    src={getBannerImage(banner)}
+                    className="w-full h-full object-cover"
+                    controls
+                    muted
+                    loop
+                    playsInline
+                  />
+                ) : (
+                  <img
+                    src={getBannerImage(banner)}
+                    alt="Banner"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                )
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-gray-400">
                   No Image
@@ -210,10 +221,10 @@ export default function AdminBannerSection() {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Banner Image</label>
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Banner File</label>
             <input
               type="file"
-              accept="image/*"
+              accept={form.type === 'video' ? 'video/*' : 'image/*'}
               className="input"
               onChange={e =>
                 setForm(p => ({
@@ -223,15 +234,37 @@ export default function AdminBannerSection() {
               }
             />
             {form.bannerImage && (
-              <img
-                src={
-                  typeof form.bannerImage === "string"
-                    ? `${baseUrl}${form.bannerImage}`
-                    : URL.createObjectURL(form.bannerImage)
-                }
-                alt="Banner preview"
-                className="mt-2 h-24 w-full object-cover rounded-xl"
-              />
+              form.type === 'video' ? (
+                <video
+                  src={
+                    typeof form.bannerImage === 'string'
+                      ? `${baseUrl}${form.bannerImage}`
+                      : URL.createObjectURL(form.bannerImage)
+                  }
+                  poster={
+                    form.thumbnail
+                      ? typeof form.thumbnail === 'string'
+                        ? `${baseUrl}${form.thumbnail}`
+                        : URL.createObjectURL(form.thumbnail)
+                      : undefined
+                  }
+                  className="mt-2 h-24 w-full object-cover rounded-xl"
+                  controls
+                  muted
+                  loop
+                  playsInline
+                />
+              ) : (
+                <img
+                  src={
+                    typeof form.bannerImage === 'string'
+                      ? `${baseUrl}${form.bannerImage}`
+                      : URL.createObjectURL(form.bannerImage)
+                  }
+                  alt="Banner preview"
+                  className="mt-2 h-24 w-full object-cover rounded-xl"
+                />
+              )
             )}
           </div>
 

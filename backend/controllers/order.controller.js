@@ -41,24 +41,41 @@ const placeOrder = async (req, res, next) => {
   // If items provided directly (from frontend), use them; otherwise get from cart
   let cart;
   let subtotal, discount;
-  
+  let couponOffer = null;
+  let couponId = null;
+
   if (orderItems && orderItems.length > 0) {
     // Calculate from provided items
     subtotal = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     discount = 0;
-    
+
     // Validate coupon if provided
     if (couponCode) {
-      const Offer = require('../models/Offer');
+      const Off1er = require('../models/Offer');
       const offer = await Offer.findOne({ couponCode: couponCode.toUpperCase(), isActive: true });
-      if (offer) {
-        if (offer.discountType === 'percentage') {
-          discount = (subtotal * offer.discountValue) / 100;
-        } else {
-          discount = offer.discountValue;
-        }
-        await Offer.findByIdAndUpdate(offer._id, { $inc: { usedCount: 1 } });
+      if (!offer || !offer.isActive || offer.expiryDate < new Date()) {
+        return next(new AppError('Invalid or expired coupon', 400));
       }
+      if (offer.usageLimit !== null && offer.usedCount >= offer.usageLimit) {
+        return next(new AppError('Coupon usage limit reached', 400));
+      }
+      if (offer.userUsageLimit !== null) {
+        const userOrderCount = await Order.countDocuments({ user: req.user.id, coupon: offer._id });
+        if (userOrderCount >= offer.userUsageLimit) {
+          return next(new AppError('Coupon already used by you', 400));
+        }
+      }
+      if (subtotal < offer.minOrderAmount) {
+        return next(new AppError(`Minimum order ₹${offer.minOrderAmount} required`, 400));
+      }
+      if (offer.discountType === 'percentage') {
+        discount = (subtotal * offer.discountValue) / 100;
+      } else {
+        discount = offer.discountValue;
+      }
+      couponOffer = offer;
+      couponId = offer._id;
+      await Offer.findByIdAndUpdate(offer._id, { $inc: { usedCount: 1 } });
     }
   } else {
     // Get from cart - populate both product and combo
@@ -79,6 +96,7 @@ const placeOrder = async (req, res, next) => {
 
     subtotal = cart.totalAmount;
     discount = cart.discountAmount || 0;
+    couponId = cart.couponApplied || null;
   }
 
   const deliveryFee = subtotal >= FREE_DELIVERY_THRESHOLD ? 0 : DELIVERY_FEE;
@@ -87,12 +105,12 @@ const placeOrder = async (req, res, next) => {
   // Calculate preparation time based on order items (maximum of all items)
   let preparationTime = 15; // default
   let items = [];
-  
+
   if (orderItems && orderItems.length > 0) {
     // Items provided directly - calculate max prep time from items
     const maxPrepTime = Math.max(...orderItems.map(item => item.preparationTime || 15), 15);
     preparationTime = maxPrepTime;
-    
+
     items = orderItems.map(item => ({
       product: item.productId,
       comboId: item.comboId,
@@ -106,7 +124,7 @@ const placeOrder = async (req, res, next) => {
     const cartWithItems = await Cart.findOne({ user: req.user.id })
       .populate('items.product', 'name images preparationTime')
       .populate('items.comboId', 'comboName comboImage preparationTime');
-    
+
     let maxPrepTime = 15;
     for (const item of cartWithItems.items) {
       if (item.product && item.product.preparationTime) {
@@ -117,7 +135,7 @@ const placeOrder = async (req, res, next) => {
       }
     }
     preparationTime = maxPrepTime;
-    
+
     items = cartWithItems.items.map(item => {
       if (item.product) {
         return {
@@ -149,7 +167,7 @@ const placeOrder = async (req, res, next) => {
     referralDiscount: req.body.referralDiscount || 0,
     deliveryFee,
     totalAmount: totalAmount || finalTotalAmount,
-    coupon: cart?.couponApplied || null,
+    coupon: couponId || null,
     notes,
     preparationTime,
     statusTimeline: [{ status: 'pending', message: 'Order placed successfully' }],
@@ -194,8 +212,9 @@ const placeOrder = async (req, res, next) => {
 
   const populatedOrder = await Order.findById(order._id)
     .populate('items.product', 'name images preparationTime')
-    .populate('items.comboId', 'comboName comboImage preparationTime');
-  
+    .populate('items.comboId', 'comboName comboImage preparationTime')
+    .populate('coupon', 'title couponCode discountType discountValue');
+
   // Emit new order notification to admin
   const io = req.app.get('io');
   if (io) {
@@ -204,7 +223,7 @@ const placeOrder = async (req, res, next) => {
       message: 'New order received!',
       timestamp: new Date(),
     });
-    
+
     // Also notify delivery person if assigned
     if (order.assignedDeliveryBoy) {
       io.to('delivery-room').emit('new-order', {
@@ -214,7 +233,7 @@ const placeOrder = async (req, res, next) => {
       });
     }
   }
-  
+
   sendResponse(res, 201, 'Order placed successfully! 🎉', { order: populatedOrder });
 };
 
@@ -230,7 +249,8 @@ const getMyOrders = async (req, res, next) => {
     .sort('-createdAt')
     .skip(skip)
     .limit(limit)
-    .populate('assignedDeliveryBoy', 'name phone');
+    .populate('assignedDeliveryBoy', 'name phone')
+    .populate('coupon', 'title couponCode discountType discountValue');
 
   const total = await Order.countDocuments({ user: req.user.id });
 
@@ -302,7 +322,7 @@ const getOrder = async (req, res, next) => {
   // Manually fetch images for each order item that doesn't have an image stored
   const Product = require('../models/Product');
   const Combo = require('../models/Combo');
-  
+
   for (const item of order.items) {
     // Check if image is missing, or if it's a short ID (24 chars - looks like a product ID)
     const isShortId = item.image && item.image.length === 24;
@@ -310,8 +330,8 @@ const getOrder = async (req, res, next) => {
       // Try to get image from product reference
       if (item.product) {
         try {
-          const productId = item.product instanceof mongoose.Types.ObjectId 
-            ? item.product 
+          const productId = item.product instanceof mongoose.Types.ObjectId
+            ? item.product
             : new mongoose.Types.ObjectId(item.product);
           const product = await Product.findById(productId).select('images');
           if (product && product.images && product.images[0] && product.images[0].url) {
@@ -325,8 +345,8 @@ const getOrder = async (req, res, next) => {
       if (!item.image || !item.image.startsWith('http')) {
         if (item.comboId) {
           try {
-            const comboId = item.comboId instanceof mongoose.Types.ObjectId 
-              ? item.comboId 
+            const comboId = item.comboId instanceof mongoose.Types.ObjectId
+              ? item.comboId
               : new mongoose.Types.ObjectId(item.comboId);
             const combo = await Combo.findById(comboId).select('comboImage');
             if (combo && combo.comboImage) {
@@ -531,19 +551,19 @@ const updateOrderStatus = async (req, res, next) => {
 // @access  Private (Delivery Boy)
 const generatePaymentQR = async (req, res, next) => {
   const order = await Order.findById(req.params.id);
-  
+
   if (!order) return next(new AppError('Order not found', 404));
-  
+
   // Only allow for COD orders
   if (order.paymentMethod !== 'cod') {
     return next(new AppError('QR code is only available for COD orders', 400));
   }
-  
+
   // Only allow if order is out for delivery or delivered
   if (!['out_for_delivery', 'delivered'].includes(order.orderStatus)) {
     return next(new AppError('Order must be out for delivery or delivered', 400));
   }
-  
+
   // Generate QR data with order details
   const qrData = JSON.stringify({
     orderId: order._id.toString(),
@@ -553,7 +573,7 @@ const generatePaymentQR = async (req, res, next) => {
     method: 'COD_QR',
     timestamp: new Date().toISOString()
   });
-  
+
   // Generate QR code as data URL
   const qrCodeDataURL = await QRCode.toDataURL(qrData, {
     width: 300,
@@ -563,7 +583,7 @@ const generatePaymentQR = async (req, res, next) => {
       light: '#ffffff'
     }
   });
-  
+
   sendResponse(res, 200, 'QR code generated', {
     qrCode: qrCodeDataURL,
     orderId: order._id,
@@ -578,32 +598,32 @@ const generatePaymentQR = async (req, res, next) => {
 // @access  Private (Delivery Boy)
 const markOrderPaid = async (req, res, next) => {
   const order = await Order.findById(req.params.id);
-  
+
   if (!order) return next(new AppError('Order not found', 404));
-  
+
   // Only allow for COD orders
   if (order.paymentMethod !== 'cod') {
     return next(new AppError('This function is only for COD orders', 400));
   }
-  
+
   // Update payment status with collection info
   order.paymentStatus = 'paid';
   order.codCollectedAt = new Date();
   order.codCollectedBy = req.user.id;
   order.codCollectionNote = req.body.note || 'Payment received via QR';
-  order.statusTimeline.push({ 
-    status: order.orderStatus, 
-    message: `COD Payment collected by delivery partner (${req.user.name || 'Delivery Boy'})` 
+  order.statusTimeline.push({
+    status: order.orderStatus,
+    message: `COD Payment collected by delivery partner (${req.user.name || 'Delivery Boy'})`
   });
-  
+
   await order.save();
-  
+
   // Update payment record
   await Payment.findOneAndUpdate(
     { order: order._id },
     { status: 'paid' }
   );
-  
+
   sendResponse(res, 200, 'Payment marked as paid', { order });
 };
 
@@ -612,15 +632,15 @@ const markOrderPaid = async (req, res, next) => {
 // @access  Admin
 const updatePreparationTime = async (req, res, next) => {
   const { preparationTime } = req.body;
-  
+
   const order = await Order.findById(req.params.id);
   if (!order) {
     return next(new AppError('Order not found', 404));
   }
-  
+
   order.preparationTime = preparationTime;
   await order.save();
-  
+
   sendResponse(res, 200, 'Preparation time updated', { order });
 };
 
@@ -629,10 +649,10 @@ const updatePreparationTime = async (req, res, next) => {
 // @access  Admin
 const getCODCollections = async (req, res, next) => {
   const { date, deliveryBoyId } = req.query;
-  
+
   // Build filter for COD orders
   const filter = { paymentMethod: 'cod' };
-  
+
   // Filter by specific date
   if (date) {
     const startOfDay = new Date(date);
@@ -641,18 +661,18 @@ const getCODCollections = async (req, res, next) => {
     endOfDay.setHours(23, 59, 59, 999);
     filter.createdAt = { $gte: startOfDay, $lte: endOfDay };
   }
-  
+
   // Filter by delivery boy
   if (deliveryBoyId) {
     filter.assignedDeliveryBoy = deliveryBoyId;
   }
-  
+
   // Get all COD orders with this filter
   const codOrders = await Order.find(filter)
     .populate('assignedDeliveryBoy', 'name phone')
     .populate('user', 'name phone')
     .sort('-createdAt');
-  
+
   // Calculate totals
   const totalCODAmount = codOrders.reduce((sum, order) => sum + order.totalAmount, 0);
   const collectedAmount = codOrders
@@ -661,7 +681,7 @@ const getCODCollections = async (req, res, next) => {
   const pendingAmount = codOrders
     .filter(order => order.paymentStatus === 'pending')
     .reduce((sum, order) => sum + order.totalAmount, 0);
-  
+
   // Group by delivery boy
   const byDeliveryBoy = {};
   for (const order of codOrders) {
@@ -685,13 +705,13 @@ const getCODCollections = async (req, res, next) => {
       }
     }
   }
-  
+
   // Group by status
   const byStatus = {
     pending: codOrders.filter(o => o.paymentStatus === 'pending').length,
     paid: codOrders.filter(o => o.paymentStatus === 'paid').length,
   };
-  
+
   sendResponse(res, 200, 'COD Collections', {
     totalOrders: codOrders.length,
     totalCODAmount,
@@ -703,8 +723,8 @@ const getCODCollections = async (req, res, next) => {
   });
 };
 
-module.exports = { 
-  placeOrder, getMyOrders, getOrder, cancelOrder, getAllOrders, 
+module.exports = {
+  placeOrder, getMyOrders, getOrder, cancelOrder, getAllOrders,
   updateOrderStatus, generatePaymentQR, markOrderPaid, updatePreparationTime,
-  getCODCollections 
+  getCODCollections
 };

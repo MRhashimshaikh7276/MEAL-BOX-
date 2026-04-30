@@ -90,6 +90,12 @@ export default function CheckoutPage() {
     finally { setValidatingCoupon(false) }
   }
 
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null)
+    setCouponCode('')
+    toast.success('Coupon removed')
+  }
+
   const handleAddAddress = async () => {
     // Validate pincode - must be exactly 6 digits starting with 1-9
     const pincodeRegex = /^[1-9][0-9]{5}$/;
@@ -271,6 +277,9 @@ export default function CheckoutPage() {
     }
   }, [items, router])
 
+
+
+  
   return (
     <>
       <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" />
@@ -372,6 +381,50 @@ export default function CheckoutPage() {
                 </label>
               ))}
               {addresses.length === 0 && <p className="text-gray-400 text-sm text-center py-4">No saved addresses. Add one above.</p>}
+            </div>
+
+            <div className="card p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Tag size={20} className="text-primary-500" />
+                <h2 className="font-display font-bold text-lg text-gray-900 dark:text-white">Apply Coupon</h2>
+              </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-[1fr_auto] gap-3">
+                  <input
+                    type="text"
+                    placeholder="Enter coupon code"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    className="input text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyCoupon}
+                    disabled={!couponCode.trim() || validatingCoupon}
+                    className="btn-primary text-sm px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {validatingCoupon ? 'Applying...' : 'Apply'}
+                  </button>
+                </div>
+                {appliedCoupon ? (
+                  <div className="rounded-xl bg-green-50 dark:bg-green-500/10 p-3 text-sm text-green-700 dark:text-green-200 border border-green-200 dark:border-green-500">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        Coupon <span className="font-semibold">{appliedCoupon.couponCode}</span> applied: {appliedCoupon.discountType === 'percentage' ? `${appliedCoupon.discountValue}% off` : `₹${appliedCoupon.discountValue} off`}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRemoveCoupon}
+                        className="text-primary-600 text-sm font-semibold hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">Use a coupon code for discounts.</p>
+                )}
+              </div>
             </div>
             
             <button

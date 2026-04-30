@@ -74,8 +74,8 @@ function AppLayout({ Component, pageProps }) {
         success: { iconTheme: { primary: '#FF6B00', secondary: '#fff' } },
       }} />
 
-      {/* PWA Install Popup - Shows to new visitors */}
-      {mounted && !isAuthRoute && <InstallPopup />}
+      {/* PWA Install Popup - Shows to customers and delivery only */}
+      {mounted && !isAuthRoute && !isAdminRoute && <InstallPopup />}
 
       <LayoutComponent>
         <Component {...pageProps} />
